@@ -1,4 +1,4 @@
-# SlimLog
+# SlimCommonLog
 
 A small modern c++ logger
 
