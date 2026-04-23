@@ -6,5 +6,5 @@ libdir=${prefix}/@CMAKE_INSTALL_LIBDIR@
 Name: SlimLog
 Description: SlimLog shared logging library
 Version: @PROJECT_VERSION@
-Cflags: -I${includedir}
-Libs: -L${libdir} -lSlimLog -Wl,-rpath,${libdir}
+Cflags: -I${includedir} -std=c++@SLIM_CXX_STANDARD@
+Libs: -L${libdir} -lslimlog -Wl,-rpath,${libdir}
