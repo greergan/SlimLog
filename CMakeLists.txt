@@ -13,9 +13,6 @@ endif()
 
 include(FetchContent)
 
-# ------------------------------------------------------------
-# Local override controls (added only)
-# ------------------------------------------------------------
 set(SLIM_USE_LOCAL_SOURCE OFF CACHE BOOL "Use local library source instead of git")
 
 if(SLIM_USE_LOCAL_SOURCE)
@@ -33,9 +30,6 @@ else()
     set(GIT_TAG ${CMAKE_MATCH_1})
 endif()
 
-# ------------------------------------------------------------
-# FetchContent guarded (only change: conditional)
-# ------------------------------------------------------------
 if(SLIM_USE_LOCAL_SOURCE)
     set(slimlibrarysrc_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR})
     message(STATUS "using LOCAL source (${slimlibrarysrc_SOURCE_DIR})")
@@ -45,10 +39,13 @@ else()
         GIT_REPOSITORY https://github.com/greergan/${SLIM_LIB}.git
         GIT_TAG        ${GIT_TAG}
     )
+
     message(STATUS "using GIT source (tag: ${GIT_TAG})")
     message(STATUS "fetched from https://github.com/greergan/${SLIM_LIB}.git")
+
     FetchContent_Populate(SlimLibrarySrc)
-        execute_process(
+
+    execute_process(
         COMMAND git rev-parse --short HEAD
         OUTPUT_VARIABLE SLIMVALUE_GIT_HASH
         OUTPUT_STRIP_TRAILING_WHITESPACE
@@ -60,26 +57,27 @@ project(${SLIM_LIB} VERSION ${GIT_TAG} LANGUAGES CXX)
 
 set(LIB_PC_IN_FILE ${SLIM_LIB_LOWER}.pc.in)
 set(LIB_PC_FILE ${SLIM_LIB_LOWER}.pc)
-set(HPP_IN_FILE "${slimlibrarysrc_SOURCE_DIR}/include/slim/${SLIM_LIB}.hpp.in")
 
-if(NOT EXISTS ${LIB_PC_IN_FILE})
-    message(FATAL_ERROR "${LIB_PC_IN_FILE} File not found")
-endif()
+string(REGEX REPLACE "^slim" "" HEADER_FILE_PREFIX "${SLIM_LIB_LOWER}")
+
+set(HPP_IN_FILE "${slimlibrarysrc_SOURCE_DIR}/include/slim/${SLIM_LIB}.hpp.in")
+set(H_IN_FILE "${slimlibrarysrc_SOURCE_DIR}/include/slim/${HEADER_FILE_PREFIX}.h.in")
+
+set(HPP_OUT_FILE "${CMAKE_CURRENT_BINARY_DIR}/include/slim/${SLIM_LIB}.hpp")
+set(H_OUT_FILE "${CMAKE_CURRENT_BINARY_DIR}/include/slim/${HEADER_FILE_PREFIX}.h")
 
 set(HPP_HEADER_ONLY OFF CACHE BOOL "Is .hpp header only library")
+
 if(EXISTS ${HPP_IN_FILE})
     set(HPP_HEADER_ONLY ON CACHE BOOL "Is .hpp header only library")
-    set(HPP_OUT_FILE "${CMAKE_CURRENT_BINARY_DIR}/include/slim/${SLIM_LIB}.hpp")
     set(SLIM_LIB_DESCRIPTION "${SLIM_LIB} header-only C++ library")
 else()
-    string(REGEX REPLACE "^slim" "" HEADER_FILE_PREFIX "${SLIM_LIB_LOWER}")
-    set(H_IN_FILE "${slimlibrarysrc_SOURCE_DIR}/include/slim/${HEADER_FILE_PREFIX}.h.in")
-    set(H_OUT_FILE "${CMAKE_CURRENT_BINARY_DIR}/include/slim/${HEADER_FILE_PREFIX}.h")
     set(SLIM_LIB_DESCRIPTION "${SLIM_LIB} C++ library")
 endif()
 
 set(SLIMVALUE_VERSION ${GIT_TAG})
 set(SLIMVALUE_VERSION_FULL "${SLIMVALUE_VERSION}+${SLIMVALUE_GIT_HASH}")
+
 execute_process(
 	COMMAND git config --get user.name
 	OUTPUT_VARIABLE GIT_USER_NAME
@@ -109,59 +107,52 @@ message(STATUS "Build dir:   ${CMAKE_BINARY_DIR}")
 message(STATUS "Dist dir: ${CPACK_OUTPUT_FILE_PREFIX}")
 message(STATUS "Local INSTALL_PREFIX: ${CMAKE_INSTALL_PREFIX}")
 message(STATUS "slim library name: ${SLIM_LIB}")
-message(STATUS  "Library .pc.in name: ${LIB_PC_IN_FILE}")
-
-if(HPP_HEADER_ONLY)
-    message(STATUS "install .hpp only: ${HPP_HEADER_ONLY}")
-    message(STATUS ".hpp.in file: ${HPP_IN_FILE}")
-    message(STATUS ".hpp file: ${HPP_OUT_FILE}")
-else()
-    message(STATUS "install .hpp only: ${HPP_HEADER_ONLY}")
-    message(STATUS ".h.in file: ${H_IN_FILE}")
-    message(STATUS ".h file: ${H_OUT_FILE}")
-endif()
-
-message(STATUS "version tag: ${GIT_TAG}")
-message(STATUS "version hash: ${SLIMVALUE_GIT_HASH}")
-message(STATUS "full version: ${SLIMVALUE_VERSION_FULL}")
-message(STATUS "Package maintainer: ${GIT_USER_NAME} <${GIT_USER_EMAIL}>")
 
 include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
 
 if(HPP_HEADER_ONLY)
-    configure_file(
-        "${HPP_IN_FILE}"
-        "${HPP_OUT_FILE}"
-        @ONLY
-    )
+    configure_file("${HPP_IN_FILE}" "${HPP_OUT_FILE}" @ONLY)
 else()
-    configure_file(
-        "${H_IN_FILE}"
-        "${H_OUT_FILE}"
-        @ONLY
-    )
+    configure_file("${H_IN_FILE}" "${H_OUT_FILE}" @ONLY)
 endif()
 
-add_library(slim INTERFACE)
-
-target_include_directories(slim
-    INTERFACE
-        $<BUILD_INTERFACE:${slimlibrarysrc_SOURCE_DIR}/include>
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include>
-        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+add_library(slim_shared SHARED
+    ${slimlibrarysrc_SOURCE_DIR}/src/main.cpp
 )
 
-target_compile_features(slim INTERFACE cxx_std_23)
+set_target_properties(slim_shared PROPERTIES
+    OUTPUT_NAME ${SLIM_LIB_LOWER}
+    VERSION ${GIT_TAG}
+    SOVERSION ${GIT_TAG}
+)
+
+add_library(slim_static STATIC
+    ${slimlibrarysrc_SOURCE_DIR}/src/main.cpp
+)
+set_target_properties(slim_static  PROPERTIES OUTPUT_NAME ${SLIM_LIB_LOWER})
+
+foreach(t slim_shared slim_static)
+    target_include_directories(${t}
+        PUBLIC
+            $<BUILD_INTERFACE:${slimlibrarysrc_SOURCE_DIR}/include>
+            $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include>
+            $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+    )
+
+    target_compile_features(${t} PUBLIC cxx_std_23)
+endforeach()
+
+add_library(slim ALIAS slim_shared)
+
 set(SLIM_CXX_STANDARD 23)
 
-if(NOT EXISTS "${slimlibrarysrc_SOURCE_DIR}/tests")
-	set(SLIM_BUILD_TESTS OFF)
-    message(STATUS "Testing: testing disabled")
-    message(STATUS "Testing: no tests directory found")
+set(SLIM_BUILD_TESTS OFF CACHE BOOL "Build tests")
+
+if(EXISTS "${slimlibrarysrc_SOURCE_DIR}/tests")
+	set(SLIM_BUILD_TESTS ON CACHE BOOL "Build tests" FORCE)
 else()
-    option(SLIM_BUILD_TESTS "Build tests" ON)
-    message(STATUS "Testing: testing enabled")
+	set(SLIM_BUILD_TESTS OFF CACHE BOOL "Build tests" FORCE)
 endif()
 
 if(SLIM_BUILD_TESTS)
@@ -188,24 +179,24 @@ if(SLIM_BUILD_TESTS)
     catch_discover_tests(slim_tests)
 endif()
 
-install(TARGETS slim EXPORT SlimTargets)
+install(TARGETS slim_shared slim_static
+    EXPORT SlimTargets
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+)
 
 if(HPP_HEADER_ONLY)
-    install(FILES
-        "${HPP_OUT_FILE}"
-        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/slim
-    )
+    install(FILES "${HPP_OUT_FILE}" DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/slim)
 else()
-    install(FILES
-        "${H_OUT_FILE}"
-        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/slim
-    )
+    install(FILES "${H_OUT_FILE}" DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/slim)
 endif()
 
 install(EXPORT SlimTargets
-        FILE SlimTargets.cmake
-        NAMESPACE Slim::
-        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/${SLIM_LIB})
+    FILE SlimTargets.cmake
+    NAMESPACE Slim::
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/${SLIM_LIB}
+)
 
 write_basic_package_version_file(
     "${CMAKE_CURRENT_BINARY_DIR}/${SLIM_LIB}ConfigVersion.cmake"

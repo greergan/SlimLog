@@ -1,3 +1,3 @@
 #include <slim/log.h>
 
-slim::log::debug() {}
+void slim::log::debug() {}
