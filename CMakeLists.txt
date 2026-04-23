@@ -62,18 +62,20 @@ set(LIB_PC_IN_FILE ${SLIM_LIB_LOWER}.pc.in)
 set(LIB_PC_FILE ${SLIM_LIB_LOWER}.pc)
 set(HPP_IN_FILE "${slimlibrarysrc_SOURCE_DIR}/include/slim/${SLIM_LIB}.hpp.in")
 
-
 if(NOT EXISTS ${LIB_PC_IN_FILE})
     message(FATAL_ERROR "${LIB_PC_IN_FILE} File not found")
 endif()
 
+set(HPP_HEADER_ONLY OFF CACHE BOOL "Is .hpp header only library")
 if(EXISTS ${HPP_IN_FILE})
     set(HPP_HEADER_ONLY ON CACHE BOOL "Is .hpp header only library")
     set(HPP_OUT_FILE "${CMAKE_CURRENT_BINARY_DIR}/include/slim/${SLIM_LIB}.hpp")
-    message(STATUS "${HPP_IN_FILE} exists")
     set(SLIM_LIB_DESCRIPTION "${SLIM_LIB} header-only C++ library")
 else()
-
+    string(REGEX REPLACE "^slim" "" HEADER_FILE_PREFIX "${SLIM_LIB_LOWER}")
+    set(H_IN_FILE "${slimlibrarysrc_SOURCE_DIR}/include/slim/${HEADER_FILE_PREFIX}.h.in")
+    set(H_OUT_FILE "${CMAKE_CURRENT_BINARY_DIR}/include/slim/${HEADER_FILE_PREFIX}.h")
+    set(SLIM_LIB_DESCRIPTION "${SLIM_LIB} C++ library")
 endif()
 
 set(SLIMVALUE_VERSION ${GIT_TAG})
@@ -114,6 +116,9 @@ if(HPP_HEADER_ONLY)
     message(STATUS ".hpp.in file: ${HPP_IN_FILE}")
     message(STATUS ".hpp file: ${HPP_OUT_FILE}")
 else()
+    message(STATUS "install .hpp only: ${HPP_HEADER_ONLY}")
+    message(STATUS ".h.in file: ${H_IN_FILE}")
+    message(STATUS ".h file: ${H_OUT_FILE}")
 endif()
 
 message(STATUS "version tag: ${GIT_TAG}")
@@ -131,6 +136,11 @@ if(HPP_HEADER_ONLY)
         @ONLY
     )
 else()
+    configure_file(
+        "${H_IN_FILE}"
+        "${H_OUT_FILE}"
+        @ONLY
+    )
 endif()
 
 add_library(slim INTERFACE)
@@ -145,7 +155,14 @@ target_include_directories(slim
 target_compile_features(slim INTERFACE cxx_std_23)
 set(SLIM_CXX_STANDARD 23)
 
-option(SLIM_BUILD_TESTS "Build tests" ON)
+if(NOT EXISTS "${slimlibrarysrc_SOURCE_DIR}/tests")
+	set(SLIM_BUILD_TESTS OFF)
+    message(STATUS "Testing: testing disabled")
+    message(STATUS "Testing: no tests directory found")
+else()
+    option(SLIM_BUILD_TESTS "Build tests" ON)
+    message(STATUS "Testing: testing enabled")
+endif()
 
 if(SLIM_BUILD_TESTS)
     FetchContent_Declare(
@@ -179,6 +196,10 @@ if(HPP_HEADER_ONLY)
         DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/slim
     )
 else()
+    install(FILES
+        "${H_OUT_FILE}"
+        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/slim
+    )
 endif()
 
 install(EXPORT SlimTargets
