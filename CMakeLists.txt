@@ -56,22 +56,39 @@ else()
 endif()
 
 project(${SLIM_LIB} VERSION ${GIT_TAG} LANGUAGES CXX)
-set(SLIM_CXX_STANDARD 23)
-set(LIB_PC_IN_FILE ${SLIM_LIB_LOWER}.pc.in)
-set(LIB_PC_FILE ${SLIM_LIB_LOWER}.pc)
+set(SLIMLIB_CXX_STANDARD 23)
 
-string(REGEX REPLACE "^slim" "" HEADER_FILE_PREFIX "${SLIM_LIB_LOWER}")
+if(${SLIM_LIB} MATCHES "^SlimCommon")
+    set(SLIM_INCLUDE_DIR "include/slim/common")
+    set(SLIM_METADATA_FILE_IN "slim_common_lib.pc.in")
+    string(REGEX REPLACE "^slimcommon" "" HEADER_FILE_PREFIX "${SLIM_LIB_LOWER}")
+else(${SLIM_LIB} MATCHES "^Slim")
+    set(SLIM_INCLUDE_DIR "include/slim")
+    string(REGEX REPLACE "^slim" "" HEADER_FILE_PREFIX "${SLIM_LIB_LOWER}")
+    set(SLIM_METADATA_FILE_IN "slim_header_lib.pc.in")
+endif()
+set(SLIM_METADATA_FILE_OUT "${SLIM_LIB_LOWER}.pc")
 
-set(HPP_IN_FILE "${slimlibrarysrc_SOURCE_DIR}/include/slim/${SLIM_LIB}.hpp.in")
-set(H_IN_FILE "${slimlibrarysrc_SOURCE_DIR}/include/slim/${HEADER_FILE_PREFIX}.h.in")
+if(NOT SLIM_INCLUDE_DIR)
+    message(FATAL_ERROR "empty SLIM_INCLUDE_DIR")
+endif()
+if(NOT HEADER_FILE_PREFIX)
+    message(FATAL_ERROR "empty HEADER_FILE_PREFIX")
+endif()
+if(NOT SLIM_METADATA_FILE_OUT)
+    message(FATAL_ERROR "empty SLIM_METADATA_FILE_OUT")
+endif()
 
-set(HPP_OUT_FILE "${CMAKE_CURRENT_BINARY_DIR}/include/slim/${SLIM_LIB}.hpp")
-set(H_OUT_FILE "${CMAKE_CURRENT_BINARY_DIR}/include/slim/${HEADER_FILE_PREFIX}.h")
+set(HPP_IN_FILE "${slimlibrarysrc_SOURCE_DIR}/${SLIM_INCLUDE_DIR}/${SLIM_LIB}.hpp.in")
+set(H_IN_FILE "${slimlibrarysrc_SOURCE_DIR}/${SLIM_INCLUDE_DIR}/${HEADER_FILE_PREFIX}.h.in")
 
-set(HPP_HEADER_ONLY OFF CACHE BOOL "Is .hpp header only library")
+set(HPP_OUT_FILE "${CMAKE_CURRENT_BINARY_DIR}/${SLIM_INCLUDE_DIR}/${SLIM_LIB}.hpp")
+set(H_OUT_FILE "${CMAKE_CURRENT_BINARY_DIR}/${SLIM_INCLUDE_DIR}/${HEADER_FILE_PREFIX}.h")
+
+set(HPP_HEADER_ONLY OFF)
 
 if(EXISTS ${HPP_IN_FILE})
-    set(HPP_HEADER_ONLY ON CACHE BOOL "Is .hpp header only library")
+    set(HPP_HEADER_ONLY)
     set(SLIM_LIB_DESCRIPTION "${SLIM_LIB} header-only C++ library")
 else()
     set(SLIM_LIB_DESCRIPTION "${SLIM_LIB} C++ library")
@@ -266,13 +283,13 @@ install(FILES
 )
 
 configure_file(
-    "${slimlibrarysrc_SOURCE_DIR}/${LIB_PC_IN_FILE}"
-    "${CMAKE_CURRENT_BINARY_DIR}/${LIB_PC_FILE}"
+    "${slimlibrarysrc_SOURCE_DIR}/${SLIM_METADATA_FILE_IN}"
+    "${CMAKE_CURRENT_BINARY_DIR}/${SLIM_METADATA_FILE_OUT}"
     @ONLY
 )
 
 install(FILES
-    "${CMAKE_CURRENT_BINARY_DIR}/${LIB_PC_FILE}"
+    "${CMAKE_CURRENT_BINARY_DIR}/${SLIM_METADATA_FILE_OUT}"
     DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig
 )
 
