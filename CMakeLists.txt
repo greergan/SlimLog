@@ -2,14 +2,8 @@ cmake_minimum_required(VERSION 3.20)
 
 cmake_path(GET CMAKE_SOURCE_DIR FILENAME SLIM_LIB)
 string(TOLOWER "${SLIM_LIB}" SLIM_LIB_LOWER)
-
-if(DEFINED CPACK_OUTPUT_FILE_PREFIX)
-    if("${CPACK_OUTPUT_FILE_PREFIX}" STREQUAL ".")
-	    set(CPACK_OUTPUT_FILE_PREFIX ${CMAKE_SOURCE_DIR})
-    endif()
-else()
-	message(FATAL_ERROR "CPACK_OUTPUT_FILE_PREFIX is not set")
-endif()
+find_package(PkgConfig REQUIRED)
+#set(CMAKE_FIND_DEBUG_MODE TRUE)
 
 include(FetchContent)
 
@@ -126,12 +120,93 @@ if(NOT GIT_USER_EMAIL)
 	set(GIT_USER_EMAIL "unknown")
 endif()
 
+file(STRINGS "${CMAKE_SOURCE_DIR}/required_packages" PACKAGE_LINES
+     REGEX "^[^#\n]")
+
+set(FOUND_PACKAGES "")
+
+foreach(line IN LISTS PACKAGE_LINES)
+    string(REGEX MATCHALL "[^ \t]+" parts "${line}")
+
+    list(GET parts 0 PKG_NAME)
+    list(LENGTH parts part_count)
+
+    if(part_count GREATER_EQUAL 3)
+        list(GET parts 1 PKG_MIN)
+        list(GET parts 2 PKG_MAX)
+        find_package(${PKG_NAME} ${PKG_MIN}...${PKG_MAX} REQUIRED)
+
+    elseif(part_count EQUAL 2)
+        list(GET parts 1 PKG_MIN)
+        find_package(${PKG_NAME} ${PKG_MIN} REQUIRED)
+
+    else()
+        find_package(${PKG_NAME} REQUIRED)
+    endif()
+
+    get_cmake_property(_all_imported IMPORTED_TARGETS)
+    message(STATUS "  [${PKG_NAME}] imported targets: ${_all_imported}")
+
+
+    string(TOUPPER ${PKG_NAME} PKG_NAME_UPPER)
+    list(APPEND FOUND_PACKAGES ${PKG_NAME})
+message(STATUS "FOUND_PACKAGES: ${FOUND_PACKAGES}")
+
+    set(PKG_INFO "")
+    set(CANDIDATE_TARGETS
+        ${PKG_NAME}::${PKG_NAME}
+        ${PKG_NAME_UPPER}::${PKG_NAME_UPPER}
+        ${PKG_NAME}
+    )
+message(STATUS "CANDIDATE_TARGETS: ${CANDIDATE_TARGETS}")
+    foreach(tgt IN LISTS CANDIDATE_TARGETS)
+message(STATUS "TARGET: ${tgt}")
+        if(TARGET ${tgt})
+message(FATAL_ERROR)
+            get_target_property(_incdirs  ${tgt} INTERFACE_INCLUDE_DIRECTORIES)
+            get_target_property(_copts    ${tgt} INTERFACE_COMPILE_OPTIONS)
+            get_target_property(_cdefs    ${tgt} INTERFACE_COMPILE_DEFINITIONS)
+            get_target_property(_libs     ${tgt} INTERFACE_LINK_LIBRARIES)
+            get_target_property(_location ${tgt} LOCATION)
+
+            if(_incdirs AND NOT _incdirs MATCHES "NOTFOUND")
+                string(REPLACE ";" ", " _incdirs_str "${_incdirs}")
+                string(APPEND PKG_INFO " includes=[${_incdirs_str}]")
+            endif()
+            if(_copts AND NOT _copts MATCHES "NOTFOUND")
+                string(REPLACE ";" ", " _copts_str "${_copts}")
+                string(APPEND PKG_INFO " cflags=[${_copts_str}]")
+            endif()
+            if(_cdefs AND NOT _cdefs MATCHES "NOTFOUND")
+                string(REPLACE ";" ", " _cdefs_str "${_cdefs}")
+                string(APPEND PKG_INFO " defines=[${_cdefs_str}]")
+            endif()
+            if(_libs AND NOT _libs MATCHES "NOTFOUND")
+                string(REPLACE ";" ", " _libs_str "${_libs}")
+                string(APPEND PKG_INFO " ldflags=[${_libs_str}]")
+            endif()
+            if(_location AND NOT _location MATCHES "NOTFOUND")
+                string(APPEND PKG_INFO " location=[${_location}]")
+            endif()
+            break()
+        endif()
+    endforeach()
+
+    message(STATUS "package: ${PKG_NAME} ${PKG_INFO}")
+    # Store per-package info in a named variable to avoid semicolon splitting
+    set(PKG_INFO_${PKG_NAME} "${PKG_INFO}")
+endforeach()
 message(STATUS "OS: ${CMAKE_SYSTEM_NAME} ${CMAKE_SYSTEM_VERSION}")
 message(STATUS "Processor: ${CMAKE_SYSTEM_PROCESSOR}")
 message(STATUS "Project dir: ${CMAKE_SOURCE_DIR}")
 message(STATUS "Build dir:   ${CMAKE_BINARY_DIR}")
 message(STATUS "Dist dir: ${CPACK_OUTPUT_FILE_PREFIX}")
 message(STATUS "Local INSTALL_PREFIX: ${CMAKE_INSTALL_PREFIX}")
+list(LENGTH FOUND_PACKAGES number_of_packages)
+message(STATUS "Found packages: ${number_of_packages}")
+foreach(pkg IN LISTS FOUND_PACKAGES)
+    message(STATUS "Found package:  ${pkg}:${PKG_INFO_${pkg}}")
+endforeach()
 message(STATUS "slim library name: ${SLIM_LIB}")
 message(STATUS "slim include path: ${SLIM_INCLUDE_DIR}")
 if(HPP_HEADER_ONLY)
@@ -198,25 +273,25 @@ endif()
 
 if(NOT HPP_HEADER_ONLY)
 
-add_library(slim_shared SHARED
+add_library(${SLIM_LIB_LOWER}_shared SHARED
     ${slimlibrarysrc_SOURCE_DIR}/src/main.cpp
 )
 
 # Fix #1: SOVERSION should be major version only, not full semver
 string(REGEX MATCH "^([0-9]+)" SLIM_VERSION_MAJOR "${GIT_TAG}")
 
-set_target_properties(slim_shared PROPERTIES
+set_target_properties(${SLIM_LIB_LOWER}_shared PROPERTIES
     OUTPUT_NAME ${SLIM_LIB_LOWER}
     VERSION     ${GIT_TAG}
     SOVERSION   ${SLIM_VERSION_MAJOR}
 )
 
-add_library(slim_static STATIC
+add_library(${SLIM_LIB_LOWER}_static STATIC
     ${slimlibrarysrc_SOURCE_DIR}/src/main.cpp
 )
-set_target_properties(slim_static PROPERTIES OUTPUT_NAME ${SLIM_LIB_LOWER})
+set_target_properties(${SLIM_LIB_LOWER}_static PROPERTIES OUTPUT_NAME ${SLIM_LIB_LOWER})
 
-foreach(t slim_shared slim_static)
+foreach(t ${SLIM_LIB_LOWER}_shared ${SLIM_LIB_LOWER}_static)
     target_include_directories(${t}
         PUBLIC
             $<BUILD_INTERFACE:${slimlibrarysrc_SOURCE_DIR}/include>
@@ -228,18 +303,18 @@ foreach(t slim_shared slim_static)
     target_compile_features(${t} PUBLIC cxx_std_${SLIMLIB_CXX_STANDARD})
 endforeach()
 
-add_library(slim ALIAS slim_shared)
+add_library(${SLIM_LIB_LOWER} ALIAS ${SLIM_LIB_LOWER}_shared)
 
-add_custom_command(TARGET slim_shared POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E echo "Shared lib: $<TARGET_FILE_NAME:slim_shared>"
+add_custom_command(TARGET ${SLIM_LIB_LOWER}_shared POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E echo "Shared lib: $<TARGET_FILE_NAME:${SLIM_LIB_LOWER}_shared>"
 )
 
-add_custom_command(TARGET slim_static POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E echo "Static lib: $<TARGET_FILE_NAME:slim_static>"
+add_custom_command(TARGET ${SLIM_LIB_LOWER}_static POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E echo "Static lib: $<TARGET_FILE_NAME:${SLIM_LIB_LOWER}_static>"
 )
 
-install(TARGETS slim_shared slim_static
-    EXPORT SlimTargets
+install(TARGETS ${SLIM_LIB_LOWER}_shared ${SLIM_LIB_LOWER}_static
+    EXPORT ${SLIM_LIB}Targets
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
@@ -260,7 +335,7 @@ if(EXISTS "${TEST_CPP}")
                 $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include>
         )
     else()
-        target_link_libraries(slim_test PRIVATE slim_shared)
+        target_link_libraries(slim_test PRIVATE ${SLIM_LIB_LOWER}_shared)
     endif()
     message(STATUS "Testing: with src/test.cpp")
     add_custom_command(TARGET slim_test POST_BUILD
@@ -297,7 +372,7 @@ if(EXISTS "${slimlibrarysrc_SOURCE_DIR}/tests")
                 $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include>
         )
     else()
-        target_link_libraries(slim_tests PRIVATE slim)
+        target_link_libraries(slim_tests PRIVATE ${SLIM_LIB_LOWER})
     endif()
 
     target_link_libraries(slim_tests PRIVATE Catch2::Catch2WithMain)
@@ -324,8 +399,8 @@ else()
 endif()
 
 if(NOT HPP_HEADER_ONLY)
-    install(EXPORT SlimTargets
-        FILE SlimTargets.cmake
+    install(EXPORT ${SLIM_LIB}Targets
+        FILE ${SLIM_LIB}Targets.cmake
         NAMESPACE Slim::
         DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/${SLIM_LIB}
     )
@@ -337,7 +412,7 @@ if(NOT HPP_HEADER_ONLY)
     )
 
     file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/${SLIM_LIB}Config.cmake"
-"include(\"\${CMAKE_CURRENT_LIST_DIR}/SlimTargets.cmake\")\n")
+"include(\"\${CMAKE_CURRENT_LIST_DIR}/${SLIM_LIB}Targets.cmake\")\n")
 
     install(FILES
         "${CMAKE_CURRENT_BINARY_DIR}/${SLIM_LIB}Config.cmake"
